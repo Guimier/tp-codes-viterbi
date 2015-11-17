@@ -5,6 +5,7 @@
 #include <bitset>        
 #include <cstdlib>
 #include <ctime>
+#include <limits>
 
 const int N=2;
 const int K=1;
@@ -29,7 +30,7 @@ bitset<bits> randBitset()
 		r |= bitset<bits>( rand() );
 	}
 	return r;
-} 
+}
 
 ////////////////////////////////////////////////////////////
 // vector< bitset<N> > GSM_code(vector< bitset<K> > mess) //
@@ -82,6 +83,24 @@ vector< bitset<N> > GSM_code( vector< bitset<K> > mess )
 	return mess_out;
 }
 
+bitset<N> automatCycle( bool in, bitset<R> registers )
+{
+	bitset<N> cod_out( 0 );
+	bitset<R+1> G0(25);
+	bitset<R+1> G1(27);
+	bitset<R+1> reg( registers.to_ulong() << 1 );
+	
+	reg.set( 0, in );
+
+	int g0 = ( reg & G0 ).count() % 2;
+	int g1 = ( reg & G1 ).count() % 2;
+
+	cod_out.set( 0, g0 );
+	cod_out.set( 1, g1 );
+
+	return cod_out;
+}
+
 /////////////////////////////////////////////////////////////////////////
 // vector< bitset<N> >  GSM_transmission(vector< bitset<N> > mess_cod) //
 //                                                                     //
@@ -97,6 +116,94 @@ vector< bitset<N> > GSM_transmission( vector< bitset<N> > mess_cod )
 	return mess_tra;
 }
 
+class Path {
+
+	private:
+		long long int localPath;
+		int localLength;
+	
+	public:
+	
+		Path():
+			localPath( 0 ),
+			localLength( 0 )
+		{}
+		
+		Path( const Path& prev, const bool last ):
+			localPath( prev.localPath | ( last << prev.localLength ) ),
+			localLength( prev.localLength + 1)
+		{}
+		
+		Path( const Path& p ):
+			localPath( p.localPath ),
+			localLength( p.localLength )
+		{}
+		
+		size_t size()
+		{
+			return localLength;
+		}
+		
+		bool at( size_t i )
+		{
+			return ( localPath >> ( i - 1 ) ) | 1;
+		}
+	
+};
+
+class WeightedPath {
+	
+	public:
+		typedef int weight_t;
+	
+	private:
+		Path path;
+		weight_t weight;
+	
+	public:
+		WeightedPath( const Path& path, const weight_t weight ):
+			path( path ),
+			weight( weight )
+		{}
+		
+		WeightedPath( const WeightedPath& prev, bool last, const weight_t add ):
+			path( prev.path, last ),
+			weight( prev.weight + add )
+		{}
+		
+		WeightedPath( const WeightedPath& wp ):
+			path( wp.path ),
+			weight( wp.weight )
+		{}
+		
+		WeightedPath():
+			path( Path() ),
+			weight( 0 )
+		{}
+		
+		void setWeight( const weight_t nWeight )
+		{
+			weight = nWeight;
+		}
+		
+		weight_t getWeight()
+		{
+			return weight;
+		}
+		
+		Path getPath()
+		{
+			return path;
+		}
+	
+};
+
+template <size_t W>
+size_t hammingDistance( const bitset<W>& a, const bitset<W>& b )
+{
+	return ( a ^ b ).count();
+}
+
 //////////////////////////////////////////////////////////////////
 // vector< bitset<K> > GSM_decode(vector< bitset<N> > mess_tra) //
 //                                                              //
@@ -105,15 +212,57 @@ vector< bitset<N> > GSM_transmission( vector< bitset<N> > mess_cod )
 
 vector< bitset<K> > GSM_decode( vector< bitset<N> > mess_tra )
 {
-
 	vector< bitset<K> > mess_dec;
+	
+	const WeightedPath defaultPath( Path(), std::numeric_limits<WeightedPath::weight_t>::max() );
+	vector<WeightedPath> prevPaths{ 1 << R, defaultPath };
+	prevPaths[0].setWeight( 0 );
+	
+	vector<WeightedPath> nextPaths( 1 << R );
+	
+	vector< bitset<N> > templ( 2 );
+	vector< vector< bitset<N> > > theoricEmmissions{ 1 << R, templ };
+	
+	for ( int i = 0; i < ( 1 << R ); ++i ) {
+		for ( int j = 0; j < ( 1 << K ); ++j ) {
+			 theoricEmmissions[i][j] = automatCycle(
+				i | 1,
+				bitset<R>( ( i >> 1 ) | ( j << ( R - 1 ) ) )
+			 );
+		}
+	}
 
-	//TODO: Code here
+	for ( auto it = mess_tra.begin(); it != mess_tra.end(); ++it ) {
+		for ( int i = 0; i < ( 1 << R ); ++i ) {
+			WeightedPath forgotZero(
+				prevPaths[i>>1],
+				i & 1,
+				hammingDistance( theoricEmmissions[i][0], *it )
+			);
+			
+			WeightedPath forgotOne(
+				prevPaths[(i>>1)||(1<<(R-1))],
+				i & 1,
+				hammingDistance( theoricEmmissions[i][1], *it )
+			);
+			
+			cout << forgotZero.getWeight() << " / " << forgotOne.getWeight() << endl;
+			
+			if ( forgotZero.getWeight() < forgotOne.getWeight() ) {
+				nextPaths[i] = forgotZero;
+			} else {
+				nextPaths[i] = forgotOne;
+			}
+		}
+		
+		prevPaths = nextPaths;
+	}
 
-	/////////// TO DELETE AND MODIFY ///////////
-	for ( unsigned int i = 0; i < mess_tra.size(); ++i )
-		mess_dec.push_back( randBitset<K>() );
-	////////////////////////////////////////////
+	Path selectedPath = prevPaths[0].getPath();
+	
+	for ( size_t i = 0; i < selectedPath.size() /*- R*/; ++i ) {
+		mess_dec.push_back( bitset<K>( selectedPath.at( i ) ) );
+	}
 
 	return mess_dec;
 }
