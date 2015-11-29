@@ -7,6 +7,8 @@
 #include <ctime>
 #include <limits>
 
+const double errorRate = 0.1;
+
 const int N=2;
 const int K=1;
 const int R=4;
@@ -111,7 +113,18 @@ vector< bitset<N> > GSM_transmission( vector< bitset<N> > mess_cod )
 {
 	vector< bitset<N> > mess_tra = mess_cod;
 
-	//TODO: Code here
+	int errCount = 0;
+	
+	for ( vector< bitset<N> >::iterator it = mess_tra.begin(); it != mess_tra.end(); ++it ) {
+		for ( int i = 0 ; i < N; ++i ) {
+			if ( rand() <= RAND_MAX * errorRate ) {
+				++errCount;
+				(*it)[i] = ! (*it)[i];
+			}
+		}
+	}
+	
+	cout << "Error count      : " << errCount << endl;
 
 	return mess_tra;
 }
