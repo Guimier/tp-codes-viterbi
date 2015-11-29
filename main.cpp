@@ -116,38 +116,22 @@ vector< bitset<N> > GSM_transmission( vector< bitset<N> > mess_cod )
 	return mess_tra;
 }
 
-class Path {
-
-	private:
-		long long int localPath;
-		int localLength;
+class Path: public vector<bool> {
 	
 	public:
 	
-		Path():
-			localPath( 0 ),
-			localLength( 0 )
+		Path(): vector<bool>( 0 )
 		{}
 		
 		Path( const Path& prev, const bool last ):
-			localPath( prev.localPath | ( last << prev.localLength ) ),
-			localLength( prev.localLength + 1)
-		{}
+			vector<bool>( prev )
+		{
+			push_back( last );
+		}
 		
 		Path( const Path& p ):
-			localPath( p.localPath ),
-			localLength( p.localLength )
+			vector<bool>( p )
 		{}
-		
-		size_t size()
-		{
-			return localLength;
-		}
-		
-		bool at( size_t i )
-		{
-			return ( localPath >> ( i - 1 ) ) | 1;
-		}
 	
 };
 
@@ -215,13 +199,19 @@ vector< bitset<K> > GSM_decode( vector< bitset<N> > mess_tra )
 	vector< bitset<K> > mess_dec;
 	
 	const WeightedPath defaultPath( Path(), std::numeric_limits<WeightedPath::weight_t>::max() );
-	vector<WeightedPath> prevPaths{ 1 << R, defaultPath };
-	prevPaths[0].setWeight( 0 );
+	vector<WeightedPath> prevPaths;
+	prevPaths.push_back( WeightedPath( Path(), 0 ) );
+	for ( int i = 1; i < 1 << R; ++i ) {
+		prevPaths.push_back( defaultPath );
+	}
 	
 	vector<WeightedPath> nextPaths( 1 << R );
 	
 	vector< bitset<N> > templ( 2 );
-	vector< vector< bitset<N> > > theoricEmmissions{ 1 << R, templ };
+	vector< vector< bitset<N> > > theoricEmmissions;
+	for ( int i = 0; i < 1 << R; ++i ) {
+		theoricEmmissions.push_back( templ );
+	}
 	
 	for ( int i = 0; i < ( 1 << R ); ++i ) {
 		for ( int j = 0; j < ( 1 << K ); ++j ) {
@@ -232,7 +222,7 @@ vector< bitset<K> > GSM_decode( vector< bitset<N> > mess_tra )
 		}
 	}
 
-	for ( auto it = mess_tra.begin(); it != mess_tra.end(); ++it ) {
+	for ( vector< bitset<N> >::const_iterator it = mess_tra.begin(); it != mess_tra.end(); ++it ) {
 		for ( int i = 0; i < ( 1 << R ); ++i ) {
 			WeightedPath forgotZero(
 				prevPaths[i>>1],
