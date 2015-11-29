@@ -11,7 +11,7 @@ const int N=2;
 const int K=1;
 const int R=4;
 
-#define DEBUG
+#undef DEBUG
 
 using namespace std; 
 
@@ -139,6 +139,7 @@ class WeightedPath {
 	
 	public:
 		typedef int weight_t;
+		static const weight_t INFINITY;
 	
 	private:
 		Path path;
@@ -152,7 +153,7 @@ class WeightedPath {
 		
 		WeightedPath( const WeightedPath& prev, bool last, const weight_t add ):
 			path( prev.path, last ),
-			weight( prev.weight + add )
+			weight( INFINITY - prev.weight <= add ? INFINITY : prev.weight + add )
 		{}
 		
 		WeightedPath( const WeightedPath& wp ):
@@ -182,6 +183,8 @@ class WeightedPath {
 	
 };
 
+const WeightedPath::weight_t WeightedPath::INFINITY = std::numeric_limits<weight_t>::max();
+
 template <size_t W>
 size_t hammingDistance( const bitset<W>& a, const bitset<W>& b )
 {
@@ -198,7 +201,7 @@ vector< bitset<K> > GSM_decode( vector< bitset<N> > mess_tra )
 {
 	vector< bitset<K> > mess_dec;
 	
-	const WeightedPath defaultPath( Path(), std::numeric_limits<WeightedPath::weight_t>::max() );
+	const WeightedPath defaultPath( Path(), WeightedPath::INFINITY );
 	vector<WeightedPath> prevPaths;
 	prevPaths.push_back( WeightedPath( Path(), 0 ) );
 	for ( int i = 1; i < 1 << R; ++i ) {
@@ -213,30 +216,38 @@ vector< bitset<K> > GSM_decode( vector< bitset<N> > mess_tra )
 		theoricEmmissions.push_back( templ );
 	}
 	
+	// Pour tous les états de *sortie* de l’automate
 	for ( int i = 0; i < ( 1 << R ); ++i ) {
+		// Pour tous les bits oubliés par l’automate
 		for ( int j = 0; j < ( 1 << K ); ++j ) {
 			 theoricEmmissions[i][j] = automatCycle(
-				i | 1,
+				 // Bit ajouté
+				i & 1,
+				// État d’*entrée*
 				bitset<R>( ( i >> 1 ) | ( j << ( R - 1 ) ) )
 			 );
 		}
 	}
 
+	// Pour tous les couples de bits du canal
 	for ( vector< bitset<N> >::const_iterator it = mess_tra.begin(); it != mess_tra.end(); ++it ) {
+		// Pour tous les états *suivants* de l’automate
 		for ( int i = 0; i < ( 1 << R ); ++i ) {
 			WeightedPath forgotZero(
+				// Chemin optimal dans l’état avant oubli d’un zéro
 				prevPaths[i>>1],
+				// Bit ajouté
 				i & 1,
 				hammingDistance( theoricEmmissions[i][0], *it )
 			);
 			
 			WeightedPath forgotOne(
-				prevPaths[(i>>1)||(1<<(R-1))],
+				// Chemin optimal dans l’état avant oubli d’un un
+				prevPaths[(i>>1)|(1<<(R-1))],
+				// Bit ajouté
 				i & 1,
 				hammingDistance( theoricEmmissions[i][1], *it )
 			);
-			
-			cout << forgotZero.getWeight() << " / " << forgotOne.getWeight() << endl;
 			
 			if ( forgotZero.getWeight() < forgotOne.getWeight() ) {
 				nextPaths[i] = forgotZero;
@@ -247,6 +258,8 @@ vector< bitset<K> > GSM_decode( vector< bitset<N> > mess_tra )
 		
 		prevPaths = nextPaths;
 	}
+	
+	cout << "Final Weight     : " << prevPaths[0].getWeight() << endl;
 
 	Path selectedPath = prevPaths[0].getPath();
 	
