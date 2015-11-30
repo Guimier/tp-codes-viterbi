@@ -42,7 +42,7 @@ bitset<bits> randBitset()
 
 vector< bitset<N> > GSM_code( vector< bitset<K> > mess )
 {
-	int i = 0, g0, g1;
+	int g0, g1;
 	vector< bitset<N> > mess_out;
 
 	bitset<N> cod_out; 
@@ -129,66 +129,96 @@ vector< bitset<N> > GSM_transmission( vector< bitset<N> > mess_cod )
 	return mess_tra;
 }
 
+/** A path of bits. */
 class Path: public vector<bool> {
 	
 	public:
 	
+		/** Create an empty path. */
 		Path(): vector<bool>( 0 )
 		{}
 		
+		/** Create a path going one step further.
+		 * @param prev
+		 *     Reference path.
+		 * @param last
+		 *     Additional bit.
+		 */
 		Path( const Path& prev, const bool last ):
 			vector<bool>( prev )
 		{
 			push_back( last );
 		}
 		
+		/** Copy a path.
+		 * @param p
+		 *     Path to be copied.
+		 */
 		Path( const Path& p ):
 			vector<bool>( p )
 		{}
 	
 };
 
+/** Path with an associated weight. */
 class WeightedPath {
 	
 	public:
+		/** Integral type for weight */
 		typedef int weight_t;
+		/** Weight considered infinite. */
 		static const weight_t INFINITY;
 	
 	private:
+		/** Path. */
 		Path path;
+		/** Weight. */
 		weight_t weight;
 	
 	public:
+		/** Create weighted path.
+		 * @param path
+		 *     Path.
+		 * @param weight
+		 *     Weight.
+		 */
 		WeightedPath( const Path& path, const weight_t weight ):
 			path( path ),
 			weight( weight )
 		{}
-		
+		/** Create weighted path going one step further.
+		 * @param prev
+		 *     Reference path.
+		 * @param last
+		 *     Additional bit.
+		 * @param add
+		 *     Additional weight.
+		 */
 		WeightedPath( const WeightedPath& prev, bool last, const weight_t add ):
 			path( prev.path, last ),
 			weight( INFINITY - prev.weight <= add ? INFINITY : prev.weight + add )
 		{}
-		
+		/** Copy weighted path.
+		 * @param wp 
+		 *     Weighted path to be copied.
+		 */
 		WeightedPath( const WeightedPath& wp ):
 			path( wp.path ),
 			weight( wp.weight )
 		{}
-		
+		/** Create an empty, no-weight path. */
 		WeightedPath():
 			path( Path() ),
 			weight( 0 )
 		{}
 		
-		void setWeight( const weight_t nWeight )
-		{
-			weight = nWeight;
-		}
-		
+		/** Get the weight. */
 		weight_t getWeight()
 		{
 			return weight;
 		}
 		
+		/** Get the path. */
 		Path getPath()
 		{
 			return path;
@@ -198,6 +228,12 @@ class WeightedPath {
 
 const WeightedPath::weight_t WeightedPath::INFINITY = std::numeric_limits<weight_t>::max();
 
+/** Compute the Hamming distance between two codes.
+ * @param W
+ *    Size of code we compare
+ * @param a, b
+ *	Codes to be compared
+ */
 template <size_t W>
 size_t hammingDistance( const bitset<W>& a, const bitset<W>& b )
 {
@@ -209,59 +245,69 @@ size_t hammingDistance( const bitset<W>& a, const bitset<W>& b )
 //                                                              //
 //     Convolutional decoding of a message (GSM norm)           //
 //////////////////////////////////////////////////////////////////
-
 vector< bitset<K> > GSM_decode( vector< bitset<N> > mess_tra )
 {
 	vector< bitset<K> > mess_dec;
 	
-	const WeightedPath defaultPath( Path(), WeightedPath::INFINITY );
+	// Template used for impossible paths initialization.
+	const WeightedPath impossiblePath( Path(), WeightedPath::INFINITY );
+	// Paths associated with the states *before* the new bits.
 	vector<WeightedPath> prevPaths;
+	// State ( 0, 0, 0, 0 ) is possible when the algorithm starts, 0 errors.
 	prevPaths.push_back( WeightedPath( Path(), 0 ) );
+	// All other states are impossible.
 	for ( int i = 1; i < 1 << R; ++i ) {
-		prevPaths.push_back( defaultPath );
+		prevPaths.push_back( impossiblePath );
 	}
 	
+	// Paths associated with the states *after* the new bits.
 	vector<WeightedPath> nextPaths( 1 << R );
 	
-	vector< bitset<N> > templ( 2 );
+	// Precomputed theoric emissions of the automat.
+	// First index: automate *output* state.
+	// Second index: bit the automat have forgotten in the operation.
 	vector< vector< bitset<N> > > theoricEmmissions;
+	
+	// Initialize matrix intermediate vectors.
+	vector< bitset<N> > templ( 2 );
 	for ( int i = 0; i < 1 << R; ++i ) {
 		theoricEmmissions.push_back( templ );
 	}
 	
-	// Pour tous les états de *sortie* de l’automate
+	// For all automat *output* states.
 	for ( int i = 0; i < ( 1 << R ); ++i ) {
-		// Pour tous les bits oubliés par l’automate
+		// For all the bits *forgotten* by the automat.
 		for ( int j = 0; j < ( 1 << K ); ++j ) {
 			 theoricEmmissions[i][j] = automatCycle(
-				 // Bit ajouté
+				 // Added bit
 				i & 1,
-				// État d’*entrée*
+				// *Input* state.
 				bitset<R>( ( i >> 1 ) | ( j << ( R - 1 ) ) )
 			 );
 		}
 	}
-
-	// Pour tous les couples de bits du canal
+	
+	// For all couples of received bits.
 	for ( vector< bitset<N> >::const_iterator it = mess_tra.begin(); it != mess_tra.end(); ++it ) {
-		// Pour tous les états *suivants* de l’automate
+		// For all automat *output* states.
 		for ( int i = 0; i < ( 1 << R ); ++i ) {
 			WeightedPath forgotZero(
-				// Chemin optimal dans l’état avant oubli d’un zéro
+				// Best path in state before the automat forgets a zero.
 				prevPaths[i>>1],
-				// Bit ajouté
+				// Bit added.
 				i & 1,
 				hammingDistance( theoricEmmissions[i][0], *it )
 			);
 			
 			WeightedPath forgotOne(
-				// Chemin optimal dans l’état avant oubli d’un un
+				// Best path in state before the automat forgets a one.
 				prevPaths[(i>>1)|(1<<(R-1))],
-				// Bit ajouté
+				// Bit added.
 				i & 1,
 				hammingDistance( theoricEmmissions[i][1], *it )
 			);
 			
+			// Remember best path for this *output* state.
 			if ( forgotZero.getWeight() < forgotOne.getWeight() ) {
 				nextPaths[i] = forgotZero;
 			} else {
@@ -269,14 +315,17 @@ vector< bitset<K> > GSM_decode( vector< bitset<N> > mess_tra )
 			}
 		}
 		
+		// Output states/paths are input states/paths for the next iteration.
 		prevPaths = nextPaths;
 	}
 	
 	cout << "Final Weight     : " << prevPaths[0].getWeight() << endl;
 
+	// Get the best path ending in the state ( 0, 0, 0, 0 ).
 	Path selectedPath = prevPaths[0].getPath();
 	
-	for ( size_t i = 0; i < selectedPath.size() /*- R*/; ++i ) {
+	// Copy best path to output (removing trailing bits).
+	for ( size_t i = 0; i < selectedPath.size() - R; ++i ) {
 		mess_dec.push_back( bitset<K>( selectedPath.at( i ) ) );
 	}
 
